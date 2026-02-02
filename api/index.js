@@ -3,4 +3,8 @@ import connection from '../src/database.js';
 
 connection();
 
-export default app;
+// Adaptador Serverless: Conecta a la DB antes de procesar la solicitud
+export default async function handler(req, res) {
+    await connection();
+    app(req, res);
+}
