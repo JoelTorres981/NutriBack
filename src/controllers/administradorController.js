@@ -234,6 +234,17 @@ const obtenerEstadisticas = async (req, res) => {
 
 
 
+const listarEstudiantes = async (req, res) => {
+    try {
+        const estudiantes = await Estudiante.find().select("-password -token -status -__v");
+        res.json(estudiantes);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ msg: "Error al listar estudiantes" });
+    }
+};
+
+
 export {
     registro,
     confirmarMail,
@@ -244,5 +255,6 @@ export {
     listarAdministradores,
     actualizarAdministrador,
     eliminarAdministrador,
-    obtenerEstadisticas
+    obtenerEstadisticas,
+    listarEstudiantes
 }
