@@ -1,8 +1,21 @@
 // src/controllers/mealController.js
 
 import { default as fetch } from 'node-fetch';
+import { translate } from 'google-translate-api-x';
 
 const BASE_URL = 'https://www.themealdb.com/api/json/v1/1/';
+
+// Helper: Translate text to Spanish
+const translateText = async (text) => {
+    if (!text) return '';
+    try {
+        const res = await translate(text, { to: 'es' });
+        return res.text;
+    } catch (error) {
+        console.error("Translation error:", error);
+        return text; // Return original if translation fails
+    }
+};
 
 // Función auxiliar para manejar la obtención de datos y errores
 const fetchData = async (url) => {
@@ -11,12 +24,10 @@ const fetchData = async (url) => {
         if (!response.ok) {
             throw new Error(`Error HTTP: ${response.status} - ${response.statusText}`);
         }
-        // Usar response.json() solo si el cuerpo no está vacío
         const text = await response.text();
         return text ? JSON.parse(text) : {};
     } catch (error) {
         console.error("Error fetching data from TheMealDB:", error);
-        // Propaga el error para que el controlador lo maneje con status 500
         throw error;
     }
 };
@@ -33,24 +44,30 @@ const getRandomMeal = async (req, res) => {
         if (data.meals && data.meals.length > 0) {
             const meal = data.meals[0];
 
-            // Lógica optimizada para extraer ingredientes
             const ingredients = Array.from({ length: 20 }, (_, i) => i + 1)
                 .map(i => ({
                     ingredient: meal[`strIngredient${i}`],
                     measure: meal[`strMeasure${i}`]
                 }))
-                .filter(item => item.ingredient && item.ingredient.trim() !== ''); // Filtra vacíos
+                .filter(item => item.ingredient && item.ingredient.trim() !== '');
+
+            // Translate fields
+            const [nameEs, categoryEs, instructionsEs] = await Promise.all([
+                translateText(meal.strMeal),
+                translateText(meal.strCategory),
+                translateText(meal.strInstructions)
+            ]);
 
             const simplifiedMeal = {
                 id: meal.idMeal,
-                name: meal.strMeal,
-                category: meal.strCategory,
-                area: meal.strArea,
-                instructions: meal.strInstructions,
+                name: nameEs,
+                category: categoryEs,
+                area: meal.strArea, // Area names usually stay as is or translate weirdly
+                instructions: instructionsEs,
                 thumbnail: meal.strMealThumb,
                 youtube: meal.strYoutube,
                 source: meal.strSource,
-                ingredients: ingredients // Lista de ingredientes limpia
+                ingredients: ingredients // Keeping ingredients in EN for now or translate loop if fast
             };
 
             res.status(200).json(simplifiedMeal);
@@ -58,7 +75,6 @@ const getRandomMeal = async (req, res) => {
             res.status(404).json({ message: "No se encontró una comida aleatoria." });
         }
     } catch (error) {
-        // El error ya fue registrado en fetchData
         res.status(500).json({ message: "Error al obtener la comida aleatoria.", error: error.message });
     }
 };
@@ -74,15 +90,29 @@ const searchMealsByName = async (req, res) => {
         return res.status(400).json({ message: "Se requiere un parámetro 'name' para la búsqueda." });
     }
     try {
-        const data = await fetchData(`${BASE_URL}search.php?s=${encodeURIComponent(name)}`);
+        // Translate search query to English first? 
+        // Integrating n8n-like logic: Detect language? 
+        // For now, let's assume search term might be English or Spanish. 
+        // TheMealDB supports mostly English.
+        // Let's try to translate the query to English before searching
+        const queryEn = (await translate(name, { to: 'en' })).text;
+
+        const data = await fetchData(`${BASE_URL}search.php?s=${encodeURIComponent(queryEn)}`);
 
         if (data.meals) {
-            const simplifiedMeals = data.meals.map(meal => ({
-                id: meal.idMeal,
-                name: meal.strMeal,
-                category: meal.strCategory,
-                area: meal.strArea,
-                thumbnail: meal.strMealThumb
+            // Translating a list might be slow. Limit or translate basic info.
+            const simplifiedMeals = await Promise.all(data.meals.slice(0, 10).map(async meal => {
+                const [nameEs, categoryEs] = await Promise.all([
+                    translateText(meal.strMeal),
+                    translateText(meal.strCategory)
+                ]);
+                return {
+                    id: meal.idMeal,
+                    name: nameEs,
+                    category: categoryEs,
+                    area: meal.strArea,
+                    thumbnail: meal.strMealThumb
+                };
             }));
             res.status(200).json(simplifiedMeals);
         } else {
@@ -109,20 +139,33 @@ const getMealById = async (req, res) => {
         if (data.meals && data.meals.length > 0) {
             const meal = data.meals[0];
 
-            // Extract ingredients
-            const ingredients = Array.from({ length: 20 }, (_, i) => i + 1)
+            // Translate MAIN fields
+            const [nameEs, categoryEs, instructionsEs, areaEs] = await Promise.all([
+                translateText(meal.strMeal),
+                translateText(meal.strCategory),
+                translateText(meal.strInstructions),
+                translateText(meal.strArea)
+            ]);
+
+            // Extract and Translate ingredients
+            const ingredientsRaw = Array.from({ length: 20 }, (_, i) => i + 1)
                 .map(i => ({
                     ingredient: meal[`strIngredient${i}`],
                     measure: meal[`strMeasure${i}`]
                 }))
                 .filter(item => item.ingredient && item.ingredient.trim() !== '');
 
+            const ingredients = await Promise.all(ingredientsRaw.map(async (item) => ({
+                ingredient: await translateText(item.ingredient),
+                measure: await translateText(item.measure)
+            })));
+
             const fullMeal = {
                 id: meal.idMeal,
-                name: meal.strMeal,
-                category: meal.strCategory,
-                area: meal.strArea,
-                instructions: meal.strInstructions,
+                name: nameEs,
+                category: categoryEs,
+                area: areaEs,
+                instructions: instructionsEs,
                 thumbnail: meal.strMealThumb,
                 tags: meal.strTags ? meal.strTags.split(',') : [],
                 youtube: meal.strYoutube,

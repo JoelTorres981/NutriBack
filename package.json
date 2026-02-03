@@ -22,6 +22,7 @@
     "express": "^5.1.0",
     "express-fileupload": "^1.5.2",
     "fs-extra": "^11.3.2",
+    "google-translate-api-x": "^10.7.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.20.1",
     "node-fetch": "^3.3.2",
