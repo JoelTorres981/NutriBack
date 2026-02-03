@@ -128,9 +128,11 @@ const login = async (req, res) => {
         if (!administradorBDD.confirmEmail) return res.status(403).json({ msg: "Debes verificar tu cuenta antes de iniciar sesión" })
         const verificarPassword = await administradorBDD.matchPassword(password)
         if (!verificarPassword) return res.status(401).json({ msg: "El password no es correcto" })
-        const token = crearTokenJWT(administradorBDD._id, administradorBDD.rol)
 
-        const { usuario, _id, rol } = administradorBDD
+        const rol = "administrador"
+        const token = crearTokenJWT(administradorBDD._id, rol)
+
+        const { usuario, _id } = administradorBDD
         res.status(200).json({
             token,
             rol,
@@ -199,14 +201,14 @@ const obtenerEstadisticas = async (req, res) => {
         const totalEstudiantes = await Estudiante.countDocuments();
         const totalAdministradores = await Administrador.countDocuments();
 
-        // Comida más consultada
-        const topComida = await Historial.aggregate([
+        // Comida más consultada (Top 5 para gráfico)
+        const topComidas = await Historial.aggregate([
             { $group: { _id: "$nombreComida", count: { $sum: 1 } } },
             { $sort: { count: -1 } },
-            { $limit: 1 }
+            { $limit: 5 }
         ]);
 
-        const comidaMasConsultada = topComida.length > 0 ? topComida[0] : null;
+        const comidaMasConsultada = topComidas.length > 0 ? topComidas[0] : null;
 
         res.json({
             totalEstudiantes,
@@ -214,7 +216,14 @@ const obtenerEstadisticas = async (req, res) => {
             comidaMasConsultada: comidaMasConsultada ? {
                 nombre: comidaMasConsultada._id,
                 consultas: comidaMasConsultada.count
-            } : "No hay datos de historial"
+            } : "No hay datos de historial",
+            graficos: {
+                comidasPopulares: topComidas.map(c => ({ name: c._id, consultas: c.count })),
+                distribucionUsuarios: [
+                    { name: "Estudiantes", value: totalEstudiantes },
+                    { name: "Administradores", value: totalAdministradores }
+                ]
+            }
         });
 
     } catch (error) {
