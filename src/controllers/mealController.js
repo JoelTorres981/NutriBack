@@ -17,7 +17,7 @@ const fetchData = async (url) => {
     } catch (error) {
         console.error("Error fetching data from TheMealDB:", error);
         // Propaga el error para que el controlador lo maneje con status 500
-        throw error; 
+        throw error;
     }
 };
 
@@ -29,7 +29,7 @@ const fetchData = async (url) => {
 const getRandomMeal = async (req, res) => {
     try {
         const data = await fetchData(`${BASE_URL}random.php`);
-        
+
         if (data.meals && data.meals.length > 0) {
             const meal = data.meals[0];
 
@@ -75,7 +75,7 @@ const searchMealsByName = async (req, res) => {
     }
     try {
         const data = await fetchData(`${BASE_URL}search.php?s=${encodeURIComponent(name)}`);
-        
+
         if (data.meals) {
             const simplifiedMeals = data.meals.map(meal => ({
                 id: meal.idMeal,
@@ -93,8 +93,55 @@ const searchMealsByName = async (req, res) => {
     }
 };
 
+/**
+ * @desc Obtiene el detalle de una comida por ID
+ * @route GET /api/meals/detail/:id
+ * @access Public
+ */
+const getMealById = async (req, res) => {
+    const { id } = req.params;
+    if (!id) {
+        return res.status(400).json({ message: "Se requiere un ID para buscar." });
+    }
+    try {
+        const data = await fetchData(`${BASE_URL}lookup.php?i=${id}`);
+
+        if (data.meals && data.meals.length > 0) {
+            const meal = data.meals[0];
+
+            // Extract ingredients
+            const ingredients = Array.from({ length: 20 }, (_, i) => i + 1)
+                .map(i => ({
+                    ingredient: meal[`strIngredient${i}`],
+                    measure: meal[`strMeasure${i}`]
+                }))
+                .filter(item => item.ingredient && item.ingredient.trim() !== '');
+
+            const fullMeal = {
+                id: meal.idMeal,
+                name: meal.strMeal,
+                category: meal.strCategory,
+                area: meal.strArea,
+                instructions: meal.strInstructions,
+                thumbnail: meal.strMealThumb,
+                tags: meal.strTags ? meal.strTags.split(',') : [],
+                youtube: meal.strYoutube,
+                source: meal.strSource,
+                ingredients: ingredients
+            };
+
+            res.status(200).json(fullMeal);
+        } else {
+            res.status(404).json({ message: `No se encontró comida con el ID "${id}".` });
+        }
+    } catch (error) {
+        res.status(500).json({ message: "Error al obtener el detalle de la comida.", error: error.message });
+    }
+}
+
 // Exportar las funciones para ES Modules
 export {
     getRandomMeal,
-    searchMealsByName
+    searchMealsByName,
+    getMealById
 };
