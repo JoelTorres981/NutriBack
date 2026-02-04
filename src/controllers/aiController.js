@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import fs from 'fs-extra';
 import Estudiante from "../models/Estudiante.js";
 import Historial from "../models/Historial.js";
+import Planificacion from "../models/Planificacion.js";
 import { subirImagenCloudinary } from "../helpers/cloudinary.js";
 
 
@@ -157,9 +158,89 @@ const getHistorial = async (req, res) => {
     }
 };
 
+const generarPlanificacion = async (req, res) => {
+    try {
+        const userId = req.estudianteHeader._id;
+        const student = await Estudiante.findById(userId);
+
+        if (!student) {
+            return res.status(404).json({ message: "Estudiante no encontrado" });
+        }
+
+        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+        const prompt = `
+            Actúa como un nutricionista experto. Genera un plan diario de comidas personalizado.
+            
+            Perfil del estudiante:
+            - Nombre: ${student.nombre}
+            - Alergias: ${student.alergias || "Ninguna"}
+            - Preferencias: ${student.preferencias || "Ninguna"} (no es necesario incluir siempre, pero considera)
+            - Dieta: ${student.dieta || "General"}
+            - Objetivo: ${student.objetivo || "Saludable"}
+            - Peso: ${student.peso || "N/A"}
+            - Presupuesto: ${student.presupuesto || "N/A"}
+
+            Genera una comida para Desayuno, Almuerzo y Cena, especificando una hora sugerida y el alimento.
+            Asegúrate de que sea una sugerencia real y completa.
+
+            Responde ESTRICTAMENTE en este formato JSON:
+            {
+                "desayuno": { "hora": "08:00 AM", "alimento": "Avena con frutas..." },
+                "almuerzo": { "hora": "01:00 PM", "alimento": "Pollo a la plancha..." },
+                "cena": { "hora": "07:30 PM", "alimento": "Ensalada ligera..." }
+            }
+        `;
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+
+        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const data = JSON.parse(jsonStr);
+
+        const nuevaPlanificacion = new Planificacion({
+            estudiante: userId,
+            desayuno: data.desayuno,
+            almuerzo: data.almuerzo,
+            cena: data.cena
+        });
+
+        await nuevaPlanificacion.save();
+        res.json(nuevaPlanificacion);
+
+    } catch (error) {
+        console.error("Error generando planificación:", error);
+        res.status(500).json({ message: "Error al generar planificación", error: error.message });
+    }
+};
+
+const obtenerPlanificaciones = async (req, res) => {
+    try {
+        const userId = req.estudianteHeader._id;
+        const planes = await Planificacion.find({ estudiante: userId }).sort({ createdAt: -1 });
+        res.json(planes);
+    } catch (error) {
+        res.status(500).json({ message: "Error al obtener planificaciones", error: error.message });
+    }
+};
+
+const eliminarPlanificacion = async (req, res) => {
+    const { id } = req.params;
+    try {
+        await Planificacion.findByIdAndDelete(id);
+        res.json({ message: "Planificación eliminada" });
+    } catch (error) {
+        res.status(500).json({ message: "Error al eliminar planificación", error: error.message });
+    }
+};
 
 
 export {
     scanFood,
-    getHistorial
+    getHistorial,
+    generarPlanificacion,
+    obtenerPlanificaciones,
+    eliminarPlanificacion
 };
